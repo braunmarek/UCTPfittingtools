@@ -321,30 +321,41 @@ def fit_bfgs(dataset, func, parameter_space, model, dataset_type):
             bounds.append((gene['low'], gene['high']))
 
         if dataset_type == "IMP":
-            [solution, best_residuals, gopt, Bopt, func_calls, grad_calls, warnflg] = fmin_bfgs(f=func,
-                                                                                                x0=starting_parameters,
-                                                                                                args=(f, R_exp, X_exp),
-                                                                                                maxiter=2000,
-                                                                                                disp=False,
-                                                                                                full_output=True)
+            # Without bounds
+            '''[solution, best_residuals, gopt, Bopt, func_calls, grad_calls, warnflg] = fmin_bfgs(f=func,
+                                                            x0=starting_parameters,
+                                                            args=(f, R_exp, X_exp),
+                                                            maxiter=2000,
+                                                            disp=False,
+                                                            full_output=True)'''
+            # With bounds
+            [solution, best_residuals, info] = fmin_l_bfgs_b(func=func,
+                                                             x0=starting_parameters,
+                                                             args=(f, R_exp, X_exp),
+                                                             maxiter=2000,
+                                                             approx_grad=True,
+                                                             disp=False,
+                                                             bounds=bounds)
         elif dataset_type == "LOAD":
             starting_parameters = []
             for gene in parameter_space:
                 starting_parameters.append(random.uniform(gene['low'], gene['high']))
-            [solution, best_residuals, gopt, Bopt, func_calls, grad_calls, warnflg] = fmin_bfgs(f=func,
+            # Without bounds
+            '''[solution, best_residuals, gopt, Bopt, func_calls, grad_calls, warnflg] = fmin_bfgs(f=func,
                                                                                                 x0=starting_parameters,
                                                                                                 args=(current, eta),
                                                                                                 maxiter=2000,
                                                                                                 disp=False,
-                                                                                                full_output=True)
+                                                                                                full_output=True)'''
+            # With bounds
+            [solution, best_residuals, info] = fmin_l_bfgs_b(func=func,
+                                                            x0=starting_parameters,
+                                                            args=(current, eta),
+                                                            maxiter=2000,
+                                                            approx_grad=True,
+                                                            disp=False,
+                                                            bounds=bounds)
 
-        '''[solution, best_residuals, info] = fmin_l_bfgs_b(func=self.residuals,
-                                                        x0=starting_parameters,
-                                                        args=(R_exp, X_exp),
-                                                        maxiter=2000,
-                                                        approx_grad=True,
-                                                        disp=False,
-                                                        bounds=bounds)'''
 
         current_fitness = best_residuals
 
@@ -477,7 +488,7 @@ class ImpedanceFitting:
                     start_time = time.perf_counter()  # Get the start time
                     parameter_space = makeParameterSpace(self.datasets[i], search_space_dict, model)
                     if optimization_algorithm == "GA":
-                        solution, solution_fitness = self.fit_impedance_ga(self.datasets[i], search_space_dict, model,
+                        solution, solution_fitness = self.fit_impedance_ga(self.datasets[i], parameter_space, model,
                                                                            num_generations, sol_per_pop,
                                                                            parent_selection_type,
                                                                            percent_parents_mating,
