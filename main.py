@@ -706,6 +706,14 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
         self.make_button(datasets, experiment_dict, dataset_type)
         self.search_space_window = PlotSearchSpaceSettingsWindow()
 
+    def changePlotType(self):
+        if self.btn_radio5.isChecked():
+            self.canvas.clearPlot()
+            self.plot_canvas_data(self.datasets, self.experiment_dict, self.dataset_type, self.mode, "line", "raw")
+        if self.btn_radio6.isChecked():
+            self.canvas.clearPlot()
+            self.plot_canvas_data(self.datasets, self.experiment_dict, self.dataset_type, self.mode, "scatter", "raw")
+
     def plot_canvas_data(self, datasets, experiment_dict, dataset_type, mode, plot_type, data_type):
         self.set_axes_labels(dataset_type)
         if dataset_type == "LOAD" or dataset_type == "CV" or dataset_type == "CVShifting" or dataset_type == "CVSlopeCorrected" or (mode == "manual" and data_type!="fit" and data_type != "IMP"):
@@ -768,25 +776,30 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
         if dataset_type == "IMP":
             button_title = "Fit Impedance Spectra"
 
+            self.group1 = QButtonGroup(self)
             # Buttons to select the model to fit
             self.btn_radio1 = QRadioButton("R0 + R1/C1", self)
             self.btn_radio1.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
             #self.layout.addWidget(self.btn_radio1)
+            self.group1.addButton(self.btn_radio1)
             self.layout.addWidget(self.btn_radio1, 3, 0, 1, 1)
 
             self.btn_radio2 = QRadioButton("R0 + R1/Q1", self)
             self.btn_radio2.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
             #self.layout.addWidget(self.btn_radio2)
+            self.group1.addButton(self.btn_radio2)
             self.layout.addWidget(self.btn_radio2, 3, 1, 1, 1)
 
             self.btn_radio3 = QRadioButton("R0 + R1/C1 + R2/C2", self)
             self.btn_radio3.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
             # self.layout.addWidget(self.btn_radio3)
+            self.group1.addButton(self.btn_radio3)
             self.layout.addWidget(self.btn_radio3, 3, 2, 1, 1)
 
             self.btn_radio4 = QRadioButton("R0 + R1/Q1 + R2/Q2", self)
             self.btn_radio4.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
             #self.layout.addWidget(self.btn_radio3)
+            self.group1.addButton(self.btn_radio4)
             self.layout.addWidget(self.btn_radio4, 3, 3, 1, 1)
             # The last button is checked by default
             self.btn_radio4.setChecked(True)
@@ -798,14 +811,26 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
             self.layout.addWidget(self.btn_plot_separate_window, 1, 3, 1, 1)
             self.btn_plot_separate_window.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
+            self.group2 = QButtonGroup(self)
+            # Button to choose between line and dots
+            self.btn_radio5 = QRadioButton("Line", self)
+            self.btn_radio5.toggled.connect(lambda: self.changePlotType())
+            self.group2.addButton(self.btn_radio5)
+            self.layout.addWidget(self.btn_radio5, 4, 3, 1, 1)
+
+            self.btn_radio6 = QRadioButton("Scatter", self)
+            self.btn_radio6.toggled.connect(lambda: self.changePlotType())
+            self.group2.addButton(self.btn_radio6)
+            self.layout.addWidget(self.btn_radio6, 5, 3, 1, 1)
+
 
         if dataset_type == "LOAD":
             button_title = "Fit Polarisation Curve"
-            self.btn_radio1 = QRadioButton("No limiting transport", self)
+            self.btn_radio1 = QRadioButton("No limiting mass transport", self)
             self.btn_radio1.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
             self.layout.addWidget(self.btn_radio1, 3, 0, 1, 1)
 
-            self.btn_radio2 = QRadioButton("Limiting transport", self)
+            self.btn_radio2 = QRadioButton("Limiting mass transport", self)
             self.btn_radio2.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
             self.layout.addWidget(self.btn_radio2, 3, 1, 1, 1)
 
@@ -1474,6 +1499,8 @@ class PlotCanvas(FigureCanvas):
             self.ax.legend()
         self.draw()
 
+    def clearPlot(self):
+        self.ax.clear()
     def on_select(self, xmin, xmax):
         self.xmin = xmin
         self.xmax = xmax
@@ -1486,7 +1513,8 @@ class PlotCanvas(FigureCanvas):
 
     def orthonormal(self):
         self.ax.set_aspect('equal', adjustable='box')
-
+        #print(self.ax.get_xlim())
+        #self.ax.set_xlim(left=0)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -32,10 +32,12 @@ def cv_integration(datasets, experiment_dict, mode, xmin, xmax):
 
 # 60m/g maximum platinum after multiplkying the result
 
-def findStartingParameters(dataset, dataset_type):
+def findStartingParameters(dataset, dataset_type, model, parameter_space):
     # This function returns the EEC's parameters to be used as starting parameters for the optimization
     # algorithms
+    # It calculates all the parameters but only the resistances are used as it can be seen in makeParameterSpace function
     if dataset_type == "IMP":
+        # Find R_el
         ranks_Real = rankList(dataset[1], "increasing")
         ranks_Im = rankList(dataset[2], "increasing")
 
@@ -47,9 +49,10 @@ def findStartingParameters(dataset, dataset_type):
                 L.append(dataset[1][tuple[1]])
         if L == []:
             L.append(1)
-
+        # Mean of the five percent values with lowest Z' and lowest Z''
         R_el = sum(L) / len(L)
 
+        # Find R_p
         ranks_Real = rankList(dataset[1], "decreasing")
         ranks_Im = rankList(dataset[2], "increasing")
 
@@ -63,27 +66,60 @@ def findStartingParameters(dataset, dataset_type):
         if L == []:
             L.append(1)
 
+        # Mean of the five percent values with highest Z' and lowest Z''
         R_p = sum(L) / len(L)
         R_p -= R_el
 
-        # C = 1/2piRf_c
+        # Find f_c
         max_Im = max(dataset[2])
         max_Im_index = dataset[2].index(max_Im)
-
         f_c = dataset[0][max_Im_index]
 
-        # R_el = 0.5 * R_el
+        if model == "Linear":
+            R1 = R_p
+            C1 = 1/(2 * np.pi * R1 * f_c)
 
-        # fc = 1/2*3.14*(R_p*Q)**1/alpha
-        Q2 = 1 / (2 * 3.14 * R_p * f_c)
-        R2 = 0.5 * R_p
-        alpha2 = 0.85
+            R1 = compareToParameterSpace(R1, parameter_space[1]['low'], parameter_space[1]['high'])
+            C1 = compareToParameterSpace(C1, parameter_space[2]['low'], parameter_space[2]['high'])
+            return [R_el, R1, C1]
 
-        Q1 = 1.5 * Q2
-        R1 = 0.5 * R_p
-        alpha1 = 0.85
+        if model == "RQ":
+            R1 = R_p
+            alpha1 = 1
+            Q1 = 1 / ((2 * np.pi * f_c)**alpha1 * R1)
 
-        return [R_el, R1, Q1, alpha1, R2, Q2, alpha2]
+            R1 = compareToParameterSpace(R1, parameter_space[1]['low'], parameter_space[1]['high'])
+            Q1 = compareToParameterSpace(Q1, parameter_space[2]['low'], parameter_space[2]['high'])
+            alpha1 = compareToParameterSpace(alpha1, parameter_space[3]['low'], parameter_space[3]['high'])
+            return [R_el, R1, Q1, alpha1]
+
+        if model == "DoubleRC":
+            R1 = 0.5*R_p
+            C1 = 1 / (2 * np.pi * R1 * f_c)
+            R2 = 0.5*R_p
+            C2 = 1 / (2 * np.pi * R2 * 2 * f_c)
+
+            R1 = compareToParameterSpace(R1, parameter_space[1]['low'], parameter_space[1]['high'])
+            C1 = compareToParameterSpace(C1, parameter_space[2]['low'], parameter_space[2]['high'])
+            R2 = compareToParameterSpace(R1, parameter_space[3]['low'], parameter_space[3]['high'])
+            C2 = compareToParameterSpace(C1, parameter_space[4]['low'], parameter_space[4]['high'])
+            return [R_el, R1, C1, R2, C2]
+
+        if model == "DoubleRQ":
+            R1 = 0.5*R_p
+            R2 = 0.5*R_p
+            alpha1 = 1
+            Q1 = 1 / ((2 * np.pi * f_c) ** alpha1 * R1)
+            alpha2 = 1
+            Q2 = 1 / ((2 * np.pi * 1 * f_c) ** alpha2 * R2)
+
+            R1 = compareToParameterSpace(R1, parameter_space[1]['low'], parameter_space[1]['high'])
+            Q1 = compareToParameterSpace(Q1, parameter_space[2]['low'], parameter_space[2]['high'])
+            alpha1 = compareToParameterSpace(alpha1, parameter_space[3]['low'], parameter_space[3]['high'])
+            R2 = compareToParameterSpace(R2, parameter_space[4]['low'], parameter_space[4]['high'])
+            Q2 = compareToParameterSpace(Q2, parameter_space[5]['low'], parameter_space[5]['high'])
+            alpha2 = compareToParameterSpace(alpha2, parameter_space[6]['low'], parameter_space[6]['high'])
+            return [R_el, R1, Q1, alpha1, R2, Q2, alpha2]
 
 
 def rankList(list, type):
@@ -113,6 +149,12 @@ def sumRanks(ranks_Real, ranks_Im):
     sorted_rank_total = sorted(rank_total)
     return sorted_rank_total
 
+def compareToParameterSpace(param, low_bound, high_bound):
+    if param > high_bound:
+        return high_bound
+    if param < low_bound:
+        return low_bound
+    return param
 
 def initializePopulation(starting_parameters, gene_space, sol_per_pop):
     population = np.zeros(shape=(sol_per_pop, len(starting_parameters)))
@@ -219,9 +261,25 @@ def makeParameterSpace(dataset, search_space_dict, model):
     if model == "DoubleRQ":
         # R_el, R1, Q1, alpha1, R2, Q2, alpha2
         num_genes = 7  # Number of genes in each individual
-        if search_space_dict['DoubleRQ'] == None and search_space_dict['FastSearch'] == False:
+        #starting_parameters = findStartingParameters(dataset, "IMP")
+
+        if search_space_dict['DoubleRQ'] == None:
             # print("None and unchecked")
-            starting_parameters = findStartingParameters(dataset, "IMP")
+
+            parameter_space = [{'low': R_low, 'high': R_high},
+                               {'low': R_low, 'high': R_high},
+                               {'low': Q_low, 'high': Q_high},
+                               {'low': alpha_low, 'high': alpha_high},
+                               {'low': R_low, 'high': R_high},
+                               {'low': Q_low, 'high': Q_high},
+                               {'low': alpha_low, 'high': alpha_high}]
+        else:
+            # print("Unchecked")
+            parameter_space = search_space_dict['DoubleRQ']
+
+        '''if search_space_dict['DoubleRQ'] == None and search_space_dict['FastSearch'] == False:
+            # print("None and unchecked")
+
             parameter_space = [{'low': R_low, 'high': R_high},
                                {'low': R_low, 'high': R_high},
                                {'low': Q_low, 'high': Q_high},
@@ -232,7 +290,7 @@ def makeParameterSpace(dataset, search_space_dict, model):
 
         elif search_space_dict['DoubleRQ'] == None and search_space_dict['FastSearch'] == True:
             # print("None and checked")
-            starting_parameters = findStartingParameters(dataset, "IMP")
+
             parameter_space = [{'low': 0.9 * starting_parameters[0], 'high': 1.1 * starting_parameters[0]},
                                {'low': 0.9 * starting_parameters[1], 'high': 1.1 * starting_parameters[1]},
                                {'low': Q_low, 'high': Q_high},
@@ -247,14 +305,14 @@ def makeParameterSpace(dataset, search_space_dict, model):
 
         elif search_space_dict['DoubleRQ'] != None and search_space_dict['FastSearch'] == True:
             # print("Checked")
-            starting_parameters = findStartingParameters(dataset, "IMP")
+
             parameter_space = [{'low': 0.9 * starting_parameters[0], 'high': 1.1 * starting_parameters[0]},
                                {'low': 0.9 * starting_parameters[1], 'high': 1.1 * starting_parameters[1]},
                                search_space_dict['DoubleRQ'][2],
                                search_space_dict['DoubleRQ'][3],
                                {'low': 0.9 * starting_parameters[4], 'high': 1.1 * starting_parameters[4]},
                                search_space_dict['DoubleRQ'][5],
-                               search_space_dict['DoubleRQ'][6]]
+                               search_space_dict['DoubleRQ'][6]]'''
 
     if model == "NotLimited":
         if search_space_dict['NotLimited'] == None:
@@ -281,8 +339,9 @@ def makeParameterSpace(dataset, search_space_dict, model):
     return parameter_space
 
 
-def fit_bfgs(dataset, func, parameter_space, model, dataset_type):
-    starting_parameters = findStartingParameters(dataset, dataset_type)
+def fit_bfgs(dataset, func, parameter_space, model, dataset_type, starting_parameters):
+
+    print("start", starting_parameters)
     fitness = 0
     if dataset_type == "IMP":
         f = dataset[0]
@@ -301,20 +360,20 @@ def fit_bfgs(dataset, func, parameter_space, model, dataset_type):
         if model == "RQ":
             # R_el, R1, Q1, alpha1
             del starting_parameters[4:]
-            starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
-            starting_parameters[3] = random.uniform(parameter_space[3]['low'], parameter_space[2]['high'])
+            '''starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            starting_parameters[3] = random.uniform(parameter_space[3]['low'], parameter_space[2]['high'])'''
 
         if model == "DoubleRC":
             # R_el, R1, C1, R2, C2
             del starting_parameters[5:]
-            starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
-            starting_parameters[4] = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])
+            '''starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            starting_parameters[4] = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])'''
 
         if model == "DoubleRQ":
-            starting_parameters[2] = random.uniform(0.001, 10)
-            starting_parameters[3] = random.uniform(0.5, 1)
-            starting_parameters[5] = random.uniform(0.001, 10)
-            starting_parameters[6] = random.uniform(0.5, 1)
+            '''starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            starting_parameters[3] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            starting_parameters[5] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            starting_parameters[6] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])'''
 
         bounds = []
         for gene in parameter_space:
@@ -340,7 +399,7 @@ def fit_bfgs(dataset, func, parameter_space, model, dataset_type):
             starting_parameters = []
             for gene in parameter_space:
                 starting_parameters.append(random.uniform(gene['low'], gene['high']))
-            # Without bounds
+                # Without bounds
             '''[solution, best_residuals, gopt, Bopt, func_calls, grad_calls, warnflg] = fmin_bfgs(f=func,
                                                                                                 x0=starting_parameters,
                                                                                                 args=(current, eta),
@@ -349,13 +408,12 @@ def fit_bfgs(dataset, func, parameter_space, model, dataset_type):
                                                                                                 full_output=True)'''
             # With bounds
             [solution, best_residuals, info] = fmin_l_bfgs_b(func=func,
-                                                            x0=starting_parameters,
-                                                            args=(current, eta),
-                                                            maxiter=2000,
-                                                            approx_grad=True,
-                                                            disp=False,
-                                                            bounds=bounds)
-
+                                                             x0=starting_parameters,
+                                                             args=(current, eta),
+                                                             maxiter=2000,
+                                                             approx_grad=True,
+                                                             disp=False,
+                                                             bounds=bounds)
 
         current_fitness = best_residuals
 
@@ -370,8 +428,8 @@ def fit_bfgs(dataset, func, parameter_space, model, dataset_type):
     return best_solution, 1 / fitness
 
 
-def fit_lm(dataset, func, parameter_space, model, dataset_type):
-    starting_parameters = findStartingParameters(dataset, dataset_type)
+def fit_lm(dataset, func, parameter_space, model, dataset_type, starting_parameters):
+
     fitness = 0
     if dataset_type == "IMP":
         f = dataset[0]
@@ -385,24 +443,24 @@ def fit_lm(dataset, func, parameter_space, model, dataset_type):
     for i in range(10):
         if model == "Linear":
             del starting_parameters[3:]
-            starting_parameters[2] = random.uniform(0.001, 10)
+            '''starting_parameters[2] = random.uniform(0.001, 10)'''
 
         if model == "RQ":
             del starting_parameters[4:]
-            starting_parameters[2] = random.uniform(0.001, 10)
-            starting_parameters[3] = random.uniform(0.5, 1)
+            '''starting_parameters[2] = random.uniform(0.001, 10)
+            starting_parameters[3] = random.uniform(0.5, 1)'''
 
         if model == "DoubleRC":
             # R_el, R1, C1, R2, C2
             del starting_parameters[5:]
-            starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
-            starting_parameters[4] = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])
+            '''starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            starting_parameters[4] = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])'''
 
         if model == "DoubleRQ":
-            starting_parameters[2] = random.uniform(0.001, 10)
+            '''starting_parameters[2] = random.uniform(0.001, 10)
             starting_parameters[3] = random.uniform(0.5, 1)
             starting_parameters[5] = random.uniform(0.001, 10)
-            starting_parameters[6] = random.uniform(0.5, 1)
+            starting_parameters[6] = random.uniform(0.5, 1)'''
 
         bounds = []
         low_bounds = []
@@ -487,8 +545,9 @@ class ImpedanceFitting:
                 for current_label in current_labels:
                     start_time = time.perf_counter()  # Get the start time
                     parameter_space = makeParameterSpace(self.datasets[i], search_space_dict, model)
+                    starting_parameters = findStartingParameters(self.datasets[i], dataset_type, model, parameter_space)
                     if optimization_algorithm == "GA":
-                        solution, solution_fitness = self.fit_impedance_ga(self.datasets[i], parameter_space, model,
+                        solution, solution_fitness = self.fit_impedance_ga(self.datasets[i], parameter_space, starting_parameters, model,
                                                                            num_generations, sol_per_pop,
                                                                            parent_selection_type,
                                                                            percent_parents_mating,
@@ -499,11 +558,11 @@ class ImpedanceFitting:
                                                                            fitness_function_type)
                     elif optimization_algorithm == "bfgs":
                         solution, solution_fitness = fit_bfgs(self.datasets[i], self.residuals_impedance,
-                                                              parameter_space, model, dataset_type)
+                                                              parameter_space, model, dataset_type, starting_parameters)
 
                     elif optimization_algorithm == "lm":
                         solution, solution_fitness = fit_lm(self.datasets[i], self.residuals_impedance_array,
-                                                            parameter_space, model, dataset_type)
+                                                            parameter_space, model, dataset_type, starting_parameters)
 
                     end_time = time.perf_counter()  # Get the end time
                     elapsed_time = end_time - start_time  # Calculate the time needed by the optimization algorithm
@@ -529,9 +588,9 @@ class ImpedanceFitting:
 
                 start_time = time.perf_counter()  # Get the start time
                 parameter_space = makeParameterSpace(dataset, search_space_dict, model)
-
+                starting_parameters = findStartingParameters(dataset, dataset_type, model, parameter_space)
                 if optimization_algorithm == "GA":
-                    solution, solution_fitness = self.fit_impedance_ga(dataset, parameter_space, model, num_generations,
+                    solution, solution_fitness = self.fit_impedance_ga(dataset, parameter_space, starting_parameters, model, num_generations,
                                                                        sol_per_pop,
                                                                        parent_selection_type, percent_parents_mating,
                                                                        crossover_type, crossover_probability,
@@ -540,15 +599,17 @@ class ImpedanceFitting:
                                                                        fitness_obj, IsInitialPop, fitness_function_type)
                 elif optimization_algorithm == "bfgs":
                     solution, solution_fitness = fit_bfgs(dataset, self.residuals_impedance, parameter_space, model,
-                                                          dataset_type)
+                                                          dataset_type, starting_parameters)
 
                 elif optimization_algorithm == "lm":
                     solution, solution_fitness = fit_lm(dataset, self.residuals_impedance_array, parameter_space, model,
-                                                        dataset_type)
+                                                        dataset_type, starting_parameters)
 
                 end_time = time.perf_counter()  # Get the end time
                 elapsed_time = end_time - start_time  # Calculate the elapsed time
-
+                print("solu", solution)
+                print("time", elapsed_time)
+                print(fitting_parameters)
                 appendFittingParameters(fitting_parameters, model, solution, exp_num)
 
                 # Calculate the simulated dataset using numpy
@@ -567,7 +628,7 @@ class ImpedanceFitting:
 
         return fitting_datasets, fitting_parameters, new_dict, time_list
 
-    def fit_impedance_ga(self, dataset, gene_space, model, num_generations, sol_per_pop, parent_selection_type,
+    def fit_impedance_ga(self, dataset, gene_space, starting_parameters, model, num_generations, sol_per_pop, parent_selection_type,
                          percent_parents_mating, crossover_type, crossover_probability, mutation_type,
                          mutation_probability, keep_elitism, fitness_obj, IsInitialPop, fitness_function_type):
         # The current dataset used for the fitting has be put as a class attribute to be used in the fitness function in order to work because of how PyGad is coded
@@ -576,7 +637,7 @@ class ImpedanceFitting:
         self.model = model
         num_genes = 0
 
-        starting_parameters = findStartingParameters(dataset, "IMP")
+
 
         if model == "Linear":
             # R_el, R_ct, C_dl
@@ -891,6 +952,7 @@ class LOADFitting:
 
         if model == "Limited":
             fitting_parameters.append(
+                # Not dec if log (log=natural logarithm, base e and log10=logarithm base 10)
                 ["Experiment", "In (A/cm^2)", "a (V/dec)", "I0 (A/cm^2)", "E0 (V)", "R (Ohm.cm^2)", "b (V/dec)",
                  "Ilim (A/cm^2)"])
 
@@ -898,7 +960,7 @@ class LOADFitting:
             self.current_dataset = dataset
             start_time = time.perf_counter()  # Get the start time
             parameter_space = makeParameterSpace(dataset, search_space_dict, model)
-
+            starting_parameters = []
             if optimization_algorithm == "GA":
                 solution, solution_fitness = self.fit_load_ga(dataset, model, num_generations, sol_per_pop,
                                                               parent_selection_type, percent_parents_mating,
@@ -908,11 +970,11 @@ class LOADFitting:
 
             elif optimization_algorithm == "bfgs":
                 solution, solution_fitness = fit_bfgs(dataset, self.residuals_load, parameter_space, model,
-                                                      dataset_type)
+                                                      dataset_type, starting_parameters)
 
             elif optimization_algorithm == "lm":
-                solution, solution_fitness = (fit_lm(dataset, self.residuals_load_array,
-                                                     parameter_space, model, dataset_type))
+                solution, solution_fitness = fit_lm(dataset, self.residuals_load_array,
+                                                     parameter_space, model, dataset_type, starting_parameters)
 
             end_time = time.perf_counter()  # Get the end time
             elapsed_time = end_time - start_time  # Calculate the elapsed time
@@ -1062,26 +1124,26 @@ class LOADFitting:
     def calculate_eta_numpy(self, parameters, current, model):
         if model == "NotLimited":
             In, A, I0, E0, R = parameters
-            return E0 - 2.3 * A * np.log((abs(current) + In) / I0) - R * (current + In)
+            return E0 - A * np.log((abs(current) + In) / I0) - R * (current + In)
 
         if model == "Limited":
             In, A, I0, E0, R, B, Ilim = parameters
             if np.any(abs(current) + In) > Ilim:
                 return 100
             else:
-                return E0 - 2.3 * A * np.log((abs(current) + In) / I0) - R * (current + In) + 2.3 * B * np.log(
+                return E0 - A * np.log((abs(current) + In) / I0) - R * (current + In) + B * np.log(
                     1 - (abs(current) + In) / Ilim)
 
     def calculate_eta(self, parameters, current, model):
         if model == "NotLimited":
             In, A, I0, E0, R = parameters
-            return E0 - 2.3 * A * math.log((abs(current) + In) / I0) - R * (current + In)
+            return E0 - A * math.log((abs(current) + In) / I0) - R * (current + In)
 
         if model == "Limited":
             In, A, I0, E0, R, B, Ilim = parameters
             if abs(current) + In > Ilim:
                 return 100
             else:
-                return E0 - 2.3 * A * math.log((abs(current) + In) / I0) - R * (current + In) + 2.3 * B * math.log(
+                return E0 - A * math.log((abs(current) + In) / I0) - R * (current + In) + B * math.log(
                     1 - (abs(current) + In) / Ilim)
 
