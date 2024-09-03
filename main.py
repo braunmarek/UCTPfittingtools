@@ -1,5 +1,6 @@
 import sys
 import time
+import re
 import csv
 import statistics
 import os
@@ -76,7 +77,6 @@ class MainWindow(QWidget):
     def chooseFiles(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Choose CSV files", "", "CSV files (*.csv)")
         if files:
-            print(files)
             self.filenames = files
         self.makePlotButton()
 
@@ -265,7 +265,6 @@ class MainWindow(QWidget):
                             datasets.append(dataset)
 
         else:
-            print(checked_experiments.keys())
             for num in checked_experiments.keys():
                 filename = self.get_filename(num, type, None)
                 #print(filename)
@@ -826,15 +825,31 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
 
         if dataset_type == "LOAD":
             button_title = "Fit Polarisation Curve"
+            self.group1 = QButtonGroup(self)
+
             self.btn_radio1 = QRadioButton("No limiting mass transport", self)
             self.btn_radio1.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
+            self.group1.addButton(self.btn_radio1)
             self.layout.addWidget(self.btn_radio1, 3, 0, 1, 1)
 
             self.btn_radio2 = QRadioButton("Limiting mass transport", self)
             self.btn_radio2.toggled.connect(lambda: self.onButtonRadioToggled(dataset_type))
+            self.group1.addButton(self.btn_radio2)
             self.layout.addWidget(self.btn_radio2, 3, 1, 1, 1)
 
             self.btn_radio1.setChecked(True)
+
+            self.group2 = QButtonGroup(self)
+            # Button to choose between line and dots
+            self.btn_radio5 = QRadioButton("Line", self)
+            self.btn_radio5.toggled.connect(lambda: self.changePlotType())
+            self.group2.addButton(self.btn_radio5)
+            self.layout.addWidget(self.btn_radio5, 3, 2, 1, 1)
+
+            self.btn_radio6 = QRadioButton("Scatter", self)
+            self.btn_radio6.toggled.connect(lambda: self.changePlotType())
+            self.group2.addButton(self.btn_radio6)
+            self.layout.addWidget(self.btn_radio6, 4, 2, 1, 1)
 
 
 
@@ -889,7 +904,7 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
             self.btn_substract_slope.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
             self.btn_fitting = QPushButton("Calculate integral")
-            self.btn_fitting.clicked.connect(lambda: self.onButtonFittingClick(datasets, experiment_dict, dataset_type))
+            self.btn_fitting.clicked.connect(lambda: self.onButtonFittingClick(self.datasets_corrected, experiment_dict, dataset_type))
             self.layout.addWidget(self.btn_fitting, 1, 1, 1, 1)
 
         if dataset_type != "CV":
@@ -938,18 +953,21 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
         return datasets_shifted
     def getOCCurrentValue(self, experiment_dict):
         mean = []
+        mean2 = []
         ocv_datasets = []
         for num in experiment_dict.keys():
             if self.mode == "auto":
                 filename = self.main_window.get_filename(num, "CVShifting", None)
             elif self.mode == "manual":
-                filename = num
+                filename = num[:-5]
+                filename = filename + 'b.csv'
             if filename:
                 ocv_dataset = self.main_window.load_dataset(filename, "CVShifting")
             if not filename:
                 continue
             if ocv_dataset != None:
                 ocv_datasets.extend(ocv_dataset)
+                mean2.append(statistics.mean(ocv_dataset[1][5:]))
                 mean.append(statistics.mean(ocv_dataset[1]))
         return mean
 
@@ -989,6 +1007,7 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
             self.plot_canvas_data(datasets_fitted, experiment_dict_fitted, dataset_type, self.mode, "line", "fit")
             #Calculate integral
             self.plot_canvas_data(datasets_corrected, experiment_dict_corrected, dataset_type, self.mode, "line", "fit")
+            self.datasets_corrected = datasets_corrected
             #self.fitting_parameters = fitting.cv_integration(datasets_corrected, experiment_dict, self.mode, self.canvas.xmin, self.canvas.xmax)
         else:
             return
@@ -1029,7 +1048,7 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
                                                     IsInitialPop,
                                                     fitness_coeff,
                                                     fitness_function_type)
-        print(self.fitting_parameters)
+        #print(self.fitting_parameters)
 
         if dataset_type == "LOAD":
 
@@ -1087,11 +1106,13 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
 
 
     def onButtonSeparateWindow(self, datasets, dataset_type):
-        if hasattr(self, 'model') and (self.model == "DoubleRQ" or self.model == "DoubleRC"):
-            self.plotSeparatemodelFitting(datasets, self.fitting_dict, dataset_type, self.model)
+        if hasattr(self, 'model') and hasattr(self, 'fitting_dict') and (self.model == "DoubleRQ" or self.model == "DoubleRC"):
+            self.plotSeparatemodelFitting(datasets, self.fitting_dict, self.fitting_parameters, dataset_type, self.model)
             pass
+        else:
+            print("Please make sure that either DoubleRC or DoubleRQ model is chosen and that the fitting has been launched")
 
-    def plotSeparatemodelFitting(self, datasets, experiment_dict, dataset_type, model):
+    def plotSeparatemodelFitting(self, datasets, experiment_dict, fitting_parameters, dataset_type, model):
         mode = "manual"
 
         if mode == "manual":
@@ -1152,7 +1173,7 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
                 separate_dataset.append((f, R_num1, X_num1))
                 separate_dataset.append((f, R_num2, X_num2))
 
-                self.separate_window = PlotSeparateWindow(separate_dataset, experiment_dict)
+                self.separate_window = PlotSeparateWindow(separate_dataset, experiment_dict, fitting_parameters[i+1], model)
                 self.separate_window.show()
                 self.separate_windows.append(self.separate_window)
 
@@ -1170,7 +1191,6 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
             #print(self.model)
 
         if dataset_type == "LOAD":
-            print("1 ok")
             if self.btn_radio1.isChecked():
                 self.model = "NotLimited"
             if self.btn_radio2.isChecked():
@@ -1188,19 +1208,19 @@ class PlotWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
 
     def set_axes_labels(self, dataset_type):
         if dataset_type == "IMP":
-            self.canvas.set_xlabel("Re(Z) / Ohm")
-            self.canvas.set_ylabel("-Im(Z) / Ohm")
+            self.canvas.set_xlabel("Re(Z) / $\Omega$")
+            self.canvas.set_ylabel("-Im(Z) / $\Omega$")
             self.canvas.orthonormal()
         elif dataset_type == "CV" or dataset_type == "CVShifting" or dataset_type == "CVSlopeCorrected":
             self.canvas.set_xlabel("Voltage / V")
-            self.canvas.set_ylabel("Current density / A/cm^2")
+            self.canvas.set_ylabel(f'Current density / $A.cm^{{{-2}}}$')
         elif dataset_type == "LOAD":
-            self.canvas.set_xlabel("Current density / A/cm^2")
+            self.canvas.set_xlabel(f'Current density / $A.cm^{{{-2}}}$')
             self.canvas.set_ylabel("Voltage / V")
 
 
 class PlotSeparateWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitting):
-    def __init__(self, datasets, experiment_dict):
+    def __init__(self, datasets, experiment_dict, fitting_parameters, model):
         super().__init__()
 
         #self.main_window = MainWindow()
@@ -1229,15 +1249,30 @@ class PlotSeparateWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitt
         self.toolbar = NavigationToolbar(self.canvas, self)
         self.layout.addWidget(self.toolbar, 0, 0, 1, 1)
 
-        self.plot_canvas_data(datasets, experiment_dict, "line")
+        self.plot_canvas_data(datasets, experiment_dict, fitting_parameters, "line", model)
 
+        #self.addText(fitting_parameters, model)
 
-    def plot_canvas_data(self, datasets, experiment_dict, plot_type):
+        '''def addText(self, fitting_parameters, model):
+            formatted_text = (
+                f'R0={fitting_parameters[1]:.2e} &#x03A9;<br>'
+                f'R1={fitting_parameters[2]:.2e} &#x03A9;<br>'
+                f'Q1={fitting_parameters[3]:.2e} F &#183; s<sup>{fitting_parameters[4] - 1:.2f}</sup><br>'
+                f'&#945;<sub>1</sub>={fitting_parameters[4]:.2f}<br>'
+                f'R2={fitting_parameters[5]:.2e} &#x03A9;<br>'
+                f'Q2={fitting_parameters[6]:.2e} F &#183; s<sup>{fitting_parameters[7] - 1:.2f}</sup><br>'
+                f'&#945;<sub>2</sub>={fitting_parameters[7]:.2f}'
+            )
+            self.label=QLabel()
+            self.label.setText(f'<p>{formatted_text}</p>')
+            self.layout.addWidget(self.label, 0, 1, 1, 1)'''
+
+    def plot_canvas_data(self, datasets, experiment_dict, fitting_parameters, plot_type, model):
         self.set_axes_labels()
-
+        self.canvas.addText(fitting_parameters, model)
         i = 0
         for exp_num, fitness in experiment_dict.items():
-
+            print(exp_num, fitness)
             self.x = datasets[i][0]
             self.y = datasets[i][1]
 
@@ -1246,12 +1281,29 @@ class PlotSeparateWindow(QMainWindow, fitting.ImpedanceFitting, fitting.LOADFitt
             label = f"{exp_num}"
             #print(data_to_plot)
             self.canvas.plot(*data_to_plot, plot_type, label)
+
+
             i += 1
+
+    '''i = 0
+    for j, exp_num in enumerate(experiment_dict.keys()):
+        for fitness in experiment_dict.values():
+            self.x = datasets[i][0]
+            self.y = datasets[i][1]
+
+            data_to_plot = datasets[i][1], datasets[i][2]
+
+            label = f"{exp_num}"
+            # print(data_to_plot)
+            self.canvas.plot(*data_to_plot, plot_type, label)
+            print(fitting_parameters)
+            self.canvas.addText(fitting_parameters[j + 1])
+            i += 1'''
 
     def set_axes_labels(self):
 
-        self.canvas.set_xlabel("Re(Z) / Ohm")
-        self.canvas.set_ylabel("-Im(Z) / Ohm")
+        self.canvas.set_xlabel("Re(Z) / $\Omega$")
+        self.canvas.set_ylabel("-Im(Z) / $\Omega$")
         self.canvas.orthonormal()
 
 class PlotSearchSpaceSettingsWindow(QWidget):
@@ -1295,7 +1347,6 @@ class PlotSearchSpaceSettingsWindow(QWidget):
             rows = 7
             columns = 3
         elif self.model == "NotLimited":
-            print("2 ok")
             rows = 5
             columns = 3
         elif self.model == "Limited":
@@ -1319,11 +1370,10 @@ class PlotSearchSpaceSettingsWindow(QWidget):
             R_low = 0
             R_high = 0.1
             Q_low = 0.001
-            Q_high = 1
+            Q_high = 10
             alpha_low = 0.5
             alpha_high = 1
         if self.model == "NotLimited" or self.model == "Limited":
-            print("3 ok")
             In_low =  0.00001
             In_high = 0.1
             A_low = 0.000001
@@ -1384,7 +1434,6 @@ class PlotSearchSpaceSettingsWindow(QWidget):
 
         elif self.model == "NotLimited":
             gene_names = ['In', 'A', 'I0', 'E0', 'R']
-            print(self.search_space_dict)
             if self.search_space_dict['NotLimited'] == None:
                 search_space = [{'low': In_low, 'high': In_high},
                               {'low': A_low, 'high': A_high},
@@ -1480,6 +1529,7 @@ class PlotSearchSpaceSettingsWindow(QWidget):
             self.search_space_dict['FastSearch'] = True
         else:
             self.search_space_dict['FastSearch'] = False
+            print("ok", self.search_space_dict['FastSearch'])
 
 class PlotCanvas(FigureCanvas):
     def __init__(self, parent=MainWindow, width=4, height=4, dpi=100):
@@ -1496,7 +1546,10 @@ class PlotCanvas(FigureCanvas):
             self.ax.scatter(x_data, y_data, label=label, linewidth=4, zorder=2)
 
         if label:
-            self.ax.legend()
+            legend = self.ax.legend(loc='upper left', bbox_to_anchor=(0, 1), borderaxespad=0.05)
+            legend.get_frame().set_facecolor('white')
+            legend.get_frame().set_edgecolor('black')
+            legend.get_frame().set_boxstyle('round,pad=0.5')
         self.draw()
 
     def clearPlot(self):
@@ -1504,6 +1557,33 @@ class PlotCanvas(FigureCanvas):
     def on_select(self, xmin, xmax):
         self.xmin = xmin
         self.xmax = xmax
+
+    def addText(self, fitting_parameters, model):
+        if model == "DoubleRC":
+            self.ax.text(0.99, 0.99,f'R0={fitting_parameters[1]:.2e} $\Omega$ \n'
+                                    f'R1={fitting_parameters[2]:.2e} $\Omega$  '
+                                    f'C1={fitting_parameters[3]:.2e} F\n'
+                                    f'R2={fitting_parameters[4]:.2e} $\Omega$  '
+                                    f'C2={fitting_parameters[5]:.2e} F'
+                                    , transform=self.ax.transAxes,
+                                     ha='right', va='top',
+                                     bbox=dict(facecolor='white', edgecolor='black',
+                                               boxstyle='round,pad=0.5'))  # Add a bounding box
+        if model == "DoubleRQ":
+            self.ax.text(0.99, 0.99,
+                         f'R0={fitting_parameters[1]:.2e} $\\Omega$ \n'
+                         f'R1={fitting_parameters[2]:.2e} $\\Omega$ \n'
+                         f'Q1={fitting_parameters[3]:.2e} $\\mathrm{{F \\cdot s^{{{fitting_parameters[4] - 1:.2f}}}}}$ \n'
+                         f'$\\alpha_1$={fitting_parameters[4]:.2f} \n'
+                         f'R2={fitting_parameters[5]:.2e} $\\Omega$ \n'
+                         f'Q2={fitting_parameters[6]:.2e} $\\mathrm{{F \\cdot s^{{{fitting_parameters[7] - 1:.2f}}}}}$ \n'
+                         f'$\\alpha_2$={fitting_parameters[7]:.2f}',
+                         transform=self.ax.transAxes,
+                         ha='right', va='top',
+                         bbox=dict(facecolor='white', edgecolor='black',
+                                   boxstyle='round,pad=0.5'))  # Add a bounding box
+
+            #transform=self.ax.figure.transFigure,
 
     def set_xlabel(self, label):
         self.ax.set_xlabel(label)

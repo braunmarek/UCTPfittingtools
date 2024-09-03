@@ -8,12 +8,11 @@ import time
 import matplotlib.pyplot as plt
 import random
 from scipy.optimize import *
-
+from scipy.signal import argrelextrema
 
 def cv_integration(datasets, experiment_dict, mode, xmin, xmax):
     # This function allows one to calculate the ECSA
     fitting_parameters = []
-
     fitting_parameters.append(["Experiment", "ECSA using desorption (dimensionless)"])
     for dataset, exp_num in zip(datasets, experiment_dict.keys()):
         integral = 0
@@ -29,48 +28,115 @@ def cv_integration(datasets, experiment_dict, mode, xmin, xmax):
             fitting_parameters.append([os.path.basename(exp_num), ECSA])
     return fitting_parameters
 
+def randomStartingParameters(dataset_type, model, parameter_space):
+    #print("random param")
+    if dataset_type == "IMP":
+        if model == "Linear":
+            R_el = random.uniform(parameter_space[0]['low'], parameter_space[0]['high'])
+            R1 = random.uniform(parameter_space[1]['low'], parameter_space[1]['high'])
+            C1 = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            return [R_el, R1, C1]
 
+        if model == "RQ":
+            R_el = random.uniform(parameter_space[0]['low'], parameter_space[0]['high'])
+            R1 = random.uniform(parameter_space[1]['low'], parameter_space[1]['high'])
+            Q1 = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            alpha1 = random.uniform(parameter_space[3]['low'], parameter_space[3]['high'])
+            return [R_el, R1, Q1, alpha1]
+
+        if model == "DoubleRC":
+            R_el = random.uniform(parameter_space[0]['low'], parameter_space[0]['high'])
+            R1 = random.uniform(parameter_space[1]['low'], parameter_space[1]['high'])
+            C1 = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            R2 = random.uniform(parameter_space[3]['low'], parameter_space[3]['high'])
+            C2 = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])
+            return [R_el, R1, C1, R2, C2]
+
+        if model == "DoubleRQ":
+            R_el = random.uniform(parameter_space[0]['low'], parameter_space[0]['high'])
+            R1 = random.uniform(parameter_space[1]['low'], parameter_space[1]['high'])
+            Q1 = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
+            alpha1 = random.uniform(parameter_space[3]['low'], parameter_space[3]['high'])
+            R2 = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])
+            Q2 = random.uniform(parameter_space[5]['low'], parameter_space[5]['high'])
+            alpha2 = random.uniform(parameter_space[6]['low'], parameter_space[6]['high'])
+            return [R_el, R1, Q1, alpha1, R2, Q2, alpha2]
 # 60m/g maximum platinum after multiplkying the result
 
-def findStartingParameters(dataset, dataset_type, model, parameter_space):
+def findStartingParameters(dataset, dataset_type, model, parameter_space, type):
+    #print("starting param")
     # This function returns the EEC's parameters to be used as starting parameters for the optimization
     # algorithms
     # It calculates all the parameters but only the resistances are used as it can be seen in makeParameterSpace function
-    if dataset_type == "IMP":
-        # Find R_el
-        ranks_Real = rankList(dataset[1], "increasing")
-        ranks_Im = rankList(dataset[2], "increasing")
+    if type == "simple":
+        print("ok")
+        if dataset_type == "IMP":
+            # Find R_el
+            ranks_Real = rankList(dataset[1], "increasing")
+            ranks_Im = rankList(dataset[2], "increasing")
 
-        sorted_rank_total = sumRanks(ranks_Real, ranks_Im)
+            sorted_rank_total = sumRanks(ranks_Real, ranks_Im)
 
-        L = []
-        for index, tuple in enumerate(sorted_rank_total):
-            if index < round(0.5 * len(dataset[0])) and tuple[1] < round(0.05 * len(dataset[0])):
-                L.append(dataset[1][tuple[1]])
-        if L == []:
-            L.append(1)
-        # Mean of the five percent values with lowest Z' and lowest Z''
-        R_el = sum(L) / len(L)
+            L = []
+            for index, tuple in enumerate(sorted_rank_total):
+                if index < round(0.5 * len(dataset[0])) and tuple[1] < round(0.05 * len(dataset[0])):
+                    L.append(dataset[1][tuple[1]])
+            if L == []:
+                L.append(1)
+            # Mean of the five percent values with lowest Z' and lowest Z''
+            R_el = sum(L) / len(L)
 
-        # Find R_p
-        ranks_Real = rankList(dataset[1], "decreasing")
-        ranks_Im = rankList(dataset[2], "increasing")
+            # Find R_p
+            ranks_Real = rankList(dataset[1], "decreasing")
+            ranks_Im = rankList(dataset[2], "increasing")
 
-        sorted_rank_total = sumRanks(ranks_Real, ranks_Im)
+            sorted_rank_total = sumRanks(ranks_Real, ranks_Im)
 
-        L = []
+            L = []
 
-        for index, tuple in enumerate(sorted_rank_total):
-            if index < round(0.5 * len(dataset[0])) and tuple[1] > round(0.95 * len(dataset[0])):
-                L.append(dataset[1][tuple[1]])
-        if L == []:
-            L.append(1)
+            for index, tuple in enumerate(sorted_rank_total):
+                if index < round(0.5 * len(dataset[0])) and tuple[1] > round(0.95 * len(dataset[0])):
+                    L.append(dataset[1][tuple[1]])
+            if L == []:
+                L.append(1)
 
-        # Mean of the five percent values with highest Z' and lowest Z''
-        R_p = sum(L) / len(L)
-        R_p -= R_el
+            # Mean of the five percent values with highest Z' and lowest Z''
+            R_p = sum(L) / len(L)
+            R_p -= R_el
 
-        # Find f_c
+            # Find f_c
+            max_Im = max(dataset[2])
+            max_Im_index = dataset[2].index(max_Im)
+            f_c = dataset[0][max_Im_index]
+
+    else:
+        f = np.array((dataset[0]))
+        R_exp = np.array(dataset[1])
+        X_exp = np.array(dataset[2])
+
+        # Calculate R_el
+        five_percent_index = int(0.10 * len(R_exp))
+        R_el = sum(R_exp[:five_percent_index]) / len(R_exp[:five_percent_index])
+
+        # Calculate R_p
+        window_size = int(0.15*len(f))
+        kernel = np.ones(window_size) / window_size
+
+        X_exp_convolve = np.convolve(X_exp, kernel, mode='same')
+        minima_indices_smoothed = argrelextrema(X_exp_convolve, np.less)[0]
+        if len(minima_indices_smoothed) == 0:
+            #print("R", R_exp)
+            #print("indexes", five_percent_index)
+            R_p = sum(R_exp[five_percent_index:]) / len(R_exp[five_percent_index:])
+            R_p -= R_el
+        else:
+            #R_p = R_exp[minima_indices_smoothed>0.5*len(f)]/len(minima_indices_smoothed)
+            #R_p = R_exp[minima_indices_smoothed]/len(minima_indices_smoothed)
+            filtered_indices = [index for index in minima_indices_smoothed if index > int(0.5*len(f))]
+            R_p = sum(R_exp[filtered_indices])/len(filtered_indices)
+            #print(R_exp[filtered_indices])
+            R_p -= R_el
+        # Calculate f_c
         max_Im = max(dataset[2])
         max_Im_index = dataset[2].index(max_Im)
         f_c = dataset[0][max_Im_index]
@@ -94,10 +160,10 @@ def findStartingParameters(dataset, dataset_type, model, parameter_space):
             return [R_el, R1, Q1, alpha1]
 
         if model == "DoubleRC":
-            R1 = 0.5*R_p
+            R1 = 0.3*R_p
             C1 = 1 / (2 * np.pi * R1 * f_c)
-            R2 = 0.5*R_p
-            C2 = 1 / (2 * np.pi * R2 * 2 * f_c)
+            R2 = 0.7*R_p
+            C2 = 1 / (2 * np.pi * R2 * f_c)
 
             R1 = compareToParameterSpace(R1, parameter_space[1]['low'], parameter_space[1]['high'])
             C1 = compareToParameterSpace(C1, parameter_space[2]['low'], parameter_space[2]['high'])
@@ -106,12 +172,12 @@ def findStartingParameters(dataset, dataset_type, model, parameter_space):
             return [R_el, R1, C1, R2, C2]
 
         if model == "DoubleRQ":
-            R1 = 0.5*R_p
-            R2 = 0.5*R_p
+            R1 = 0.4*R_p
+            R2 = 0.6*R_p
             alpha1 = 1
             Q1 = 1 / ((2 * np.pi * f_c) ** alpha1 * R1)
             alpha2 = 1
-            Q2 = 1 / ((2 * np.pi * 1 * f_c) ** alpha2 * R2)
+            Q2 = 1 / ((2 * np.pi * f_c) ** alpha2 * R2)
 
             R1 = compareToParameterSpace(R1, parameter_space[1]['low'], parameter_space[1]['high'])
             Q1 = compareToParameterSpace(Q1, parameter_space[2]['low'], parameter_space[2]['high'])
@@ -160,7 +226,7 @@ def initializePopulation(starting_parameters, gene_space, sol_per_pop):
     population = np.zeros(shape=(sol_per_pop, len(starting_parameters)))
     for sol_idx in range(sol_per_pop):
         for gene_idx in range(len(starting_parameters)):
-            if gene_idx != 0 and gene_idx != 1 and gene_idx != 4:
+            '''if gene_idx != 0 and gene_idx != 1 and gene_idx != 4:
                 # population[sol_idx][gene_idx] = np.asarray(np.random.normal(starting_parameters[gene_idx], 0.90 * starting_parameters[gene_idx], size=1))
                 population[sol_idx][gene_idx] = np.asarray(
                     np.random.uniform(starting_parameters[gene_idx], 0.90 * starting_parameters[gene_idx], size=1))
@@ -169,10 +235,10 @@ def initializePopulation(starting_parameters, gene_space, sol_per_pop):
                 elif population[sol_idx][gene_idx] < gene_space[gene_idx]['low']:
                     population[sol_idx][gene_idx] = gene_space[gene_idx]['low']
 
-            else:
-                population[sol_idx][gene_idx] = starting_parameters[gene_idx]
-        if population[sol_idx][2] > population[sol_idx][5]:
-            population[sol_idx][2] = 0.5 * population[sol_idx][5]
+            else:'''
+            population[sol_idx][gene_idx] = starting_parameters[gene_idx]
+        '''if population[sol_idx][2] > population[sol_idx][5]:
+            population[sol_idx][2] = 0.5 * population[sol_idx][5]'''
     return population
 
 
@@ -209,7 +275,7 @@ def makeParameterSpace(dataset, search_space_dict, model):
         R_low = 0
         R_high = 0.1
         Q_low = 0.001
-        Q_high = 1
+        Q_high = 10
         alpha_low = 0.5
         alpha_high = 1
     if model == "NotLimited" or model == "Limited":
@@ -341,7 +407,7 @@ def makeParameterSpace(dataset, search_space_dict, model):
 
 def fit_bfgs(dataset, func, parameter_space, model, dataset_type, starting_parameters):
 
-    print("start", starting_parameters)
+    #print("start", starting_parameters)
     fitness = 0
     if dataset_type == "IMP":
         f = dataset[0]
@@ -395,6 +461,8 @@ def fit_bfgs(dataset, func, parameter_space, model, dataset_type, starting_param
                                                              approx_grad=True,
                                                              disp=False,
                                                              bounds=bounds)
+
+
         elif dataset_type == "LOAD":
             starting_parameters = []
             for gene in parameter_space:
@@ -440,28 +508,23 @@ def fit_lm(dataset, func, parameter_space, model, dataset_type, starting_paramet
         current = dataset[0]
         eta = dataset[1]
 
-    for i in range(10):
+    for i in range(1):
         if model == "Linear":
             del starting_parameters[3:]
-            '''starting_parameters[2] = random.uniform(0.001, 10)'''
+
 
         if model == "RQ":
             del starting_parameters[4:]
-            '''starting_parameters[2] = random.uniform(0.001, 10)
-            starting_parameters[3] = random.uniform(0.5, 1)'''
+
 
         if model == "DoubleRC":
             # R_el, R1, C1, R2, C2
             del starting_parameters[5:]
-            '''starting_parameters[2] = random.uniform(parameter_space[2]['low'], parameter_space[2]['high'])
-            starting_parameters[4] = random.uniform(parameter_space[4]['low'], parameter_space[4]['high'])'''
 
         if model == "DoubleRQ":
-            '''starting_parameters[2] = random.uniform(0.001, 10)
-            starting_parameters[3] = random.uniform(0.5, 1)
-            starting_parameters[5] = random.uniform(0.001, 10)
-            starting_parameters[6] = random.uniform(0.5, 1)'''
+            pass
 
+        '''lm doesn't handle bounds 
         bounds = []
         low_bounds = []
         high_bounds = []
@@ -469,7 +532,8 @@ def fit_lm(dataset, func, parameter_space, model, dataset_type, starting_paramet
             low_bounds.append(gene['low'])
             high_bounds.append(gene['high'])
         bounds.append(low_bounds)
-        bounds.append(high_bounds)
+        bounds.append(high_bounds)'''
+
         if dataset_type == "IMP":
             result = least_squares(fun=func,
                                    x0=starting_parameters,
@@ -509,6 +573,7 @@ class ImpedanceFitting:
 
         self.datasets = datasets
         self.fitness_coeff = fitness_coeff
+        self.fitness_function_type = fitness_function_type  # Can be either "normal" or "numpy" for faster calculation
         dataset_type = "IMP"
 
         # Items to be returned :
@@ -519,18 +584,18 @@ class ImpedanceFitting:
 
         if model == "Linear":
             fitting_parameters.append(
-                ["Experiment", "Ohmic resistance (Ohm)", "Charge transfer resistance (Ohm)", "Capacity (F)"])
+                ["Experiment", "R0 (Ohm)", "R1 (Ohm)", "C1 (F)"])
         if model == "RQ":
             fitting_parameters.append(
-                ["Experiment", "Ohmic resistance (Ohm)", "Charge transfer resistance (Ohm)", "Capacity (F)", "alpha"])
+                ["Experiment", "R0 (Ohm)", "R1 (Ohm)", "Q1 (F.s^(alpha1-1)", "alpha1"])
         if model == "DoubleRC":
             fitting_parameters.append(["Experiment", "Ohmic resistance (Ohm)",
                                        "R1 (Ohm)", "C1 (F)",
                                        "R2 (Ohm)", "C2 (F)"])
         if model == "DoubleRQ":
             fitting_parameters.append(["Experiment", "Ohmic resistance (Ohm)",
-                                       "R1 (Ohm)", "Q1 (F)", "alpha1",
-                                       "R2 (Ohm)", "Q2 (F)", "alpha2"])
+                                       "R1 (Ohm)", "Q1 (F.s^(alpha1-1)", "alpha1",
+                                       "R2 (Ohm)", "Q2 (F.s^(alpha2-1)", "alpha2"])
 
         if model == "Fouquet":
             fitting_parameters.append(["Experiment", "Ohmic resistance (Ohm)", "Charge transfer resistance (Ohm)",
@@ -545,7 +610,11 @@ class ImpedanceFitting:
                 for current_label in current_labels:
                     start_time = time.perf_counter()  # Get the start time
                     parameter_space = makeParameterSpace(self.datasets[i], search_space_dict, model)
-                    starting_parameters = findStartingParameters(self.datasets[i], dataset_type, model, parameter_space)
+                    if search_space_dict['FastSearch'] == True:
+                        starting_parameters = findStartingParameters(self.datasets[i], dataset_type, model, parameter_space, "other")
+                    else:
+                        starting_parameters = randomStartingParameters(dataset_type, model, parameter_space)
+                        print("starting", starting_parameters)
                     if optimization_algorithm == "GA":
                         solution, solution_fitness = self.fit_impedance_ga(self.datasets[i], parameter_space, starting_parameters, model,
                                                                            num_generations, sol_per_pop,
@@ -554,8 +623,7 @@ class ImpedanceFitting:
                                                                            crossover_type, crossover_probability,
                                                                            mutation_type, mutation_probability,
                                                                            keep_elitism,
-                                                                           fitness_obj, IsInitialPop,
-                                                                           fitness_function_type)
+                                                                           fitness_obj, IsInitialPop)
                     elif optimization_algorithm == "bfgs":
                         solution, solution_fitness = fit_bfgs(self.datasets[i], self.residuals_impedance,
                                                               parameter_space, model, dataset_type, starting_parameters)
@@ -583,12 +651,16 @@ class ImpedanceFitting:
                     i += 1
 
         if mode == "manual":
-            # If the files are selected manually, then the experiment number is the name of the file
+            # If the files are sected manually, then the experiment number is the name of the file
             for dataset, exp_num in zip(self.datasets, experiment_dict.keys()):
 
                 start_time = time.perf_counter()  # Get the start time
                 parameter_space = makeParameterSpace(dataset, search_space_dict, model)
-                starting_parameters = findStartingParameters(dataset, dataset_type, model, parameter_space)
+                if search_space_dict['FastSearch'] == True:
+                    starting_parameters = findStartingParameters(dataset, dataset_type, model, parameter_space, "other")
+                else:
+                    starting_parameters = randomStartingParameters(dataset_type, model, parameter_space)
+                    #print("starting", starting_parameters)
                 if optimization_algorithm == "GA":
                     solution, solution_fitness = self.fit_impedance_ga(dataset, parameter_space, starting_parameters, model, num_generations,
                                                                        sol_per_pop,
@@ -596,7 +668,7 @@ class ImpedanceFitting:
                                                                        crossover_type, crossover_probability,
                                                                        mutation_type, mutation_probability,
                                                                        keep_elitism,
-                                                                       fitness_obj, IsInitialPop, fitness_function_type)
+                                                                       fitness_obj, IsInitialPop)
                 elif optimization_algorithm == "bfgs":
                     solution, solution_fitness = fit_bfgs(dataset, self.residuals_impedance, parameter_space, model,
                                                           dataset_type, starting_parameters)
@@ -607,9 +679,9 @@ class ImpedanceFitting:
 
                 end_time = time.perf_counter()  # Get the end time
                 elapsed_time = end_time - start_time  # Calculate the elapsed time
-                print("solu", solution)
-                print("time", elapsed_time)
-                print(fitting_parameters)
+                #print("solu", solution)
+                #print("time", elapsed_time)
+                #print(fitting_parameters)
                 appendFittingParameters(fitting_parameters, model, solution, exp_num)
 
                 # Calculate the simulated dataset using numpy
@@ -630,10 +702,9 @@ class ImpedanceFitting:
 
     def fit_impedance_ga(self, dataset, gene_space, starting_parameters, model, num_generations, sol_per_pop, parent_selection_type,
                          percent_parents_mating, crossover_type, crossover_probability, mutation_type,
-                         mutation_probability, keep_elitism, fitness_obj, IsInitialPop, fitness_function_type):
+                         mutation_probability, keep_elitism, fitness_obj, IsInitialPop):
         # The current dataset used for the fitting has be put as a class attribute to be used in the fitness function in order to work because of how PyGad is coded
         self.current_dataset = dataset
-        self.fitness_function_type = fitness_function_type  # Can be either "normal" or "numpy" for faster calculation
         self.model = model
         num_genes = 0
 
@@ -828,9 +899,10 @@ class ImpedanceFitting:
             R2 = solution[4]
             Q2 = solution[5]
             alpha2 = solution[6]
-
-            Z = R_el + R1 / (1 + R1 * Q1 * (1j * 2 * 3.14 * f) ** alpha1) + R2 / (
-                        1 + R2 * Q2 * (1j * 2 * 3.14 * f) ** alpha2)
+            omega1 = np.power(1j * 2 * 3.14 * f, alpha1)
+            omega2 = np.power(1j * 2 * 3.14 * f, alpha2)
+            Z = R_el + R1 / (1 + R1 * Q1 * omega1) + R2 / (
+                        1 + R2 * Q2 * omega2)
 
         if self.model == "Fouquet":
             R_el = solution[0]
@@ -894,34 +966,66 @@ class ImpedanceFitting:
         return R_num, X_num
 
     def residuals_impedance(self, solution, x, y, z):
-        freqs = np.array(x)
-        R_exp = np.array(y)
-        X_exp = np.array(z)
+        if self.fitness_function_type == "normal":
+            residuals = 0
+            R_max = max(y)
+            X_max = max(z)
 
-        R_num, X_num = self.calculate_R_X_numpy(solution, freqs, self.model)
+            for i in range(len(x)):
+                f = x[i]
+                #print(solution)
+                R_num, X_num = self.calculate_R_X(solution, f)
 
-        R_max = np.max(y)
-        X_max = np.max(z)
+                R_exp = y[i]
+                X_exp = z[i]
+                residuals += math.sqrt(((R_num - R_exp) / R_max) ** 2 + ((X_num - X_exp) / X_max) ** 2)
 
-        residuals = np.sqrt(((R_num - R_exp) / R_max) ** 2 + ((X_num - X_exp) / X_max) ** 2)
-        residuals = np.sum(residuals) / len(x)
-        return residuals
+            residuals /= len(x)
+            return residuals
+        if self.fitness_function_type == "numpy":
+            freqs = np.array(x)
+            R_exp = np.array(y)
+            X_exp = np.array(z)
+
+            R_num, X_num = self.calculate_R_X_numpy(solution, freqs, self.model)
+
+            R_max = np.max(y)
+            X_max = np.max(z)
+
+            residuals = np.sqrt(((R_num - R_exp) / R_max) ** 2 + ((X_num - X_exp) / X_max) ** 2)
+            residuals = np.sum(residuals) / len(x)
+            return residuals
 
     def residuals_impedance_array(self, solution, x, y, z):
+        if self.fitness_function_type == "normal":
+            residuals = []
+            R_max = max(y)
+            X_max = max(z)
 
-        freqs = np.array(x)
-        R_exp = np.array(y)
-        X_exp = np.array(z)
+            for i in range(len(x)):
+                f = x[i]
+                #print(solution)
+                R_num, X_num = self.calculate_R_X(solution, f)
 
-        R_num, X_num = self.calculate_R_X_numpy(solution, freqs, self.model)
+                R_exp = y[i]
+                X_exp = z[i]
+                residuals.append(math.sqrt(((R_num - R_exp) / R_max) ** 2 + ((X_num - X_exp) / X_max) ** 2))
 
-        R_max = np.max(y)
-        X_max = np.max(z)
+            return residuals
+        if self.fitness_function_type == "numpy":
+            freqs = np.array(x)
+            R_exp = np.array(y)
+            X_exp = np.array(z)
 
-        residuals = np.sqrt(((R_num - R_exp) / R_max) ** 2 + ((X_num - X_exp) / X_max) ** 2)
-        # residuals = np.sqrt(((R_num - R_exp)/(R_exp**2 + X_exp**2)) ** 2 + ((X_num - X_exp)/(R_exp**2 + X_exp**2)) ** 2)
+            R_num, X_num = self.calculate_R_X_numpy(solution, freqs, self.model)
 
-        return residuals
+            R_max = np.max(y)
+            X_max = np.max(z)
+
+            residuals = np.sqrt(((R_num - R_exp) / R_max) ** 2 + ((X_num - X_exp) / X_max) ** 2)
+            # residuals = np.sqrt(((R_num - R_exp)/(R_exp**2 + X_exp**2)) ** 2 + ((X_num - X_exp)/(R_exp**2 + X_exp**2)) ** 2)
+
+            return residuals
 
 
 ### LOAD
